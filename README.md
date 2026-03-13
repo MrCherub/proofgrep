@@ -1,3 +1,4 @@
+
 # proofgrep
 
 `proofgrep` is a small local CLI for searching proof notes, math notes, and related text files without standing up a service.
