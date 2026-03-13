@@ -43,3 +43,7 @@ Use `--literal` if you want exact text matching.
 
 Set `NO_COLOR=1` to force plain output.
 Set `FORCE_COLOR=1` to keep color even when piping.
+
+## Screenshot
+
+![proofgrep screenshot](./assets/proofgrep-demo.png)
