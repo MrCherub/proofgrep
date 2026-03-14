@@ -17,6 +17,7 @@ TEXT_EXTENSIONS = {
     ".tex",
     ".lean",
     ".typ",
+    ".sty",
 }
 
 DEFAULT_ROOTS = [
@@ -27,9 +28,10 @@ DEFAULT_ROOTS = [
 ]
 
 STOPWORDS = {
-    "a", "about", "an", "and", "are", "can", "do", "does", "for", "from", "how", "i", "in", "is",
-    "it", "known", "my", "of", "on", "or", "say", "tell", "that", "the", "their", "these", "this",
-    "to", "what", "where", "which", "who", "why", "with", "your",
+    "a", "about", "an", "and", "are", "can", "do", "does", "file", "files", "find", "for", "from",
+    "give", "how", "i", "in", "is", "it", "known", "locate", "me", "my", "of", "on", "open", "or",
+    "path", "pull", "say", "show", "tell", "that", "the", "their", "these", "this", "to", "what",
+    "where", "which", "who", "why", "with", "your",
 }
 
 NORD = {
@@ -73,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     find_parser = subparsers.add_parser("find", help="Find matching lines")
     find_parser.add_argument("query", help="Search query")
     find_parser.add_argument("paths", nargs="*", help="Files or directories to search")
-    find_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "all"], default="all")
+    find_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "sty", "all"], default="all")
     find_parser.add_argument("--hidden", action="store_true", help="Include hidden files")
     find_parser.add_argument("--context", type=int, default=0, help="Context lines")
     find_parser.add_argument("--ignore-case", action="store_true", help="Case-insensitive search")
@@ -87,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser = subparsers.add_parser("ask", help="Ask a question and retrieve relevant snippets")
     ask_parser.add_argument("query", help="Question or search prompt")
     ask_parser.add_argument("paths", nargs="*", help="Files or directories to search")
-    ask_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "all"], default="all")
+    ask_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "sty", "all"], default="all")
     ask_parser.add_argument("--hidden", action="store_true", help="Include hidden files")
     ask_parser.add_argument("--context", type=int, default=1, help="Context lines around each hit")
     ask_parser.add_argument("--limit", type=int, default=8, help="Maximum number of hits to show")
@@ -95,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     chat_parser = subparsers.add_parser("chat", help="Open an interactive proofgrep prompt")
     chat_parser.add_argument("paths", nargs="*", help="Files or directories to search")
-    chat_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "all"], default="all")
+    chat_parser.add_argument("--type", dest="file_type", choices=["md", "tex", "lean", "txt", "typ", "sty", "all"], default="all")
     chat_parser.add_argument("--hidden", action="store_true", help="Include hidden files")
     chat_parser.add_argument("--context", type=int, default=1, help="Context lines around each hit")
     chat_parser.add_argument("--limit", type=int, default=8, help="Maximum number of hits to show")
@@ -205,7 +207,7 @@ def run_rg(query: str, paths: list[Path], file_type: str, include_hidden: bool, 
     if file_type != "all":
         cmd.extend(["-g", f"*.{file_type}"])
     else:
-        for glob in ["*.md", "*.markdown", "*.txt", "*.tex", "*.lean", "*.typ"]:
+        for glob in ["*.md", "*.markdown", "*.txt", "*.tex", "*.lean", "*.typ", "*.sty"]:
             cmd.extend(["-g", glob])
     cmd.append(pattern)
     cmd.extend(str(path) for path in paths)
@@ -247,17 +249,50 @@ def run_python(query: str, paths: list[Path], file_type: str, include_hidden: bo
     return 0 if matched else 1
 
 
-def score_line(line_lower: str, path_lower: str, terms: list[str], phrase_matcher: re.Pattern[str]) -> tuple[int, list[str]]:
+def query_has_file_intent(query: str) -> bool:
+    return any(word in query.lower().split() for word in {"file", "files", "path", "locate", "open"})
+
+
+def score_path(path: Path, terms: list[str], phrase_matcher: re.Pattern[str], file_intent: bool) -> tuple[int, list[str]]:
+    path_lower = str(path).lower()
+    name_lower = path.name.lower()
+    stem_lower = path.stem.lower()
+    matched_terms: list[str] = []
+    score = 0
+
+    if phrase_matcher.search(name_lower):
+        score += 60 if file_intent else 36
+    elif phrase_matcher.search(path_lower):
+        score += 30 if file_intent else 18
+
+    for term in terms:
+        if term == stem_lower:
+            score += 72 if file_intent else 42
+            matched_terms.append(term)
+        elif term in name_lower:
+            score += 28 if file_intent else 16
+            matched_terms.append(term)
+        elif term in path_lower:
+            score += 10 if file_intent else 6
+            matched_terms.append(term)
+
+    if file_intent and path.suffix.lower() in TEXT_EXTENSIONS:
+        score += 8
+
+    return score, list(dict.fromkeys(matched_terms))
+
+
+def score_line(line_lower: str, terms: list[str], phrase_matcher: re.Pattern[str]) -> tuple[int, list[str]]:
     matched_terms = [term for term in terms if term in line_lower]
-    if not matched_terms and not phrase_matcher.search(line_lower):
+    phrase_hit = phrase_matcher.search(line_lower) is not None
+    if not matched_terms and not phrase_hit:
         return 0, []
 
-    score = len(matched_terms) * 12
-    if phrase_matcher.search(line_lower):
-        score += 20
-    score += sum(3 for term in terms if term in path_lower)
+    score = len(matched_terms) * 14
+    if phrase_hit:
+        score += 24
     if line_lower.strip().startswith("#"):
-        score += 4
+        score += 6
     return score, matched_terms
 
 
@@ -267,6 +302,7 @@ def search_question(query: str, paths: list[Path], file_type: str, include_hidde
         terms = [query.lower()]
     phrase_pattern = build_pattern(" ".join(terms), literal=False)
     phrase_matcher = re.compile(phrase_pattern, re.IGNORECASE)
+    file_intent = query_has_file_intent(query)
 
     hits: list[QuestionHit] = []
     for path in iter_files(paths, file_type, include_hidden):
@@ -275,10 +311,23 @@ def search_question(query: str, paths: list[Path], file_type: str, include_hidde
         except (UnicodeDecodeError, OSError):
             continue
 
-        path_lower = str(path).lower()
+        path_score, path_terms = score_path(path, terms, phrase_matcher, file_intent)
+        if path_score:
+            hits.append(
+                QuestionHit(
+                    path=path,
+                    line_number=1,
+                    line_text=f"file match: {path.name}",
+                    before=[],
+                    after=[],
+                    score=path_score,
+                    matched_terms=path_terms,
+                )
+            )
+
         for index, line in enumerate(lines):
             line_lower = line.lower()
-            score, matched_terms = score_line(line_lower, path_lower, terms, phrase_matcher)
+            score, matched_terms = score_line(line_lower, terms, phrase_matcher)
             if score == 0:
                 continue
             before = [(n + 1, lines[n]) for n in range(max(0, index - context), index)]
