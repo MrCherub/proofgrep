@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -379,6 +380,18 @@ def print_question_results(query: str, hits: list[QuestionHit]) -> int:
     return 0
 
 
+def open_hit(hit: QuestionHit) -> int:
+    editor = os.environ.get("EDITOR")
+    path_str = str(hit.path)
+    if editor:
+        cmd = shlex.split(editor) + [path_str]
+    elif sys.platform == "darwin":
+        cmd = ["open", path_str]
+    else:
+        cmd = ["xdg-open", path_str]
+    return subprocess.run(cmd).returncode
+
+
 def run_find(args: argparse.Namespace) -> int:
     paths = normalize_paths(args.paths)
     if shutil.which("rg") is not None:
@@ -395,8 +408,10 @@ def run_ask(args: argparse.Namespace) -> int:
 def run_chat(args: argparse.Namespace) -> int:
     paths = normalize_paths(args.paths, defaults=DEFAULT_ROOTS)
     colors = use_color()
+    last_hits: list[QuestionHit] = []
     print(paint("∀ ∃ proofgrep", NORD["title"], colors))
     print(paint("Ask about your notes. Type :q to quit.", NORD["muted"], colors))
+    print(paint("Type a result number to open that file.", NORD["muted"], colors))
     while True:
         try:
             query = input(paint("proofgrep> ", NORD["match"], colors))
@@ -410,8 +425,24 @@ def run_chat(args: argparse.Namespace) -> int:
             return 0
         if query in {":help", "help"}:
             print("Type a question like: What do my notes say about Navier-Stokes?")
+            print("After results appear, type a number like 1 to open that file.")
+            continue
+        if query.isdigit():
+            if not last_hits:
+                print(paint("No previous results to open.", NORD["muted"], colors))
+                continue
+            index = int(query)
+            if not 1 <= index <= len(last_hits):
+                print(paint(f"No result {index}.", NORD["muted"], colors))
+                continue
+            hit = last_hits[index - 1]
+            print(paint(f"Opening {hit.path}", NORD["title"], colors), flush=True)
+            returncode = open_hit(hit)
+            if returncode != 0:
+                print(paint("Failed to open result.", NORD["muted"], colors))
             continue
         hits = search_question(query, paths, args.file_type, args.hidden, args.context, args.limit)
+        last_hits = hits
         print_question_results(query, hits)
         print()
 

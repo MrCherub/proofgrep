@@ -20,6 +20,9 @@ Interactive mode:
 proofgrep
 ```
 
+After results appear in interactive mode, type a result number like `1` to open that file in `$EDITOR`.
+If `$EDITOR` is not set on macOS, `proofgrep` falls back to `open`.
+
 One-shot question:
 
 ```sh
