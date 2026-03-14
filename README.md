@@ -20,8 +20,8 @@ Interactive mode:
 proofgrep
 ```
 
-After results appear in interactive mode, type a result number like `1` to open that file in `$EDITOR`.
-If `$EDITOR` is not set on macOS, `proofgrep` falls back to `open`.
+After results appear in interactive mode, type a result number like `1` to open that file in `nvim` when it is available.
+If `nvim` is not available, `proofgrep` falls back to `$EDITOR`, then to the platform opener.
 
 One-shot question:
 

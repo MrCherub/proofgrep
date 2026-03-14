@@ -381,14 +381,17 @@ def print_question_results(query: str, hits: list[QuestionHit]) -> int:
 
 
 def open_hit(hit: QuestionHit) -> int:
-    editor = os.environ.get("EDITOR")
     path_str = str(hit.path)
-    if editor:
-        cmd = shlex.split(editor) + [path_str]
-    elif sys.platform == "darwin":
-        cmd = ["open", path_str]
+    if shutil.which("nvim") is not None:
+        cmd = ["nvim", path_str]
     else:
-        cmd = ["xdg-open", path_str]
+        editor = os.environ.get("EDITOR")
+        if editor:
+            cmd = shlex.split(editor) + [path_str]
+        elif sys.platform == "darwin":
+            cmd = ["open", path_str]
+        else:
+            cmd = ["xdg-open", path_str]
     return subprocess.run(cmd).returncode
 
 
