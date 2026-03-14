@@ -1,11 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 set -euo pipefail
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-while [ -L "$SCRIPT_PATH" ]; do
-  DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-  SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
-  [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$DIR/$SCRIPT_PATH"
-done
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-exec python3 "$ROOT/proofgrep/cli.py" "$@"
+repo_dir=/Users/jj/Developer/proofgrep
+bin="$repo_dir/zig-out/bin/proofgrep"
+if [[ ! -x "$bin" || "$repo_dir/src/main.zig" -nt "$bin" || "$repo_dir/build.zig" -nt "$bin" || "$repo_dir/build.zig.zon" -nt "$bin" ]]; then
+  (cd "$repo_dir" && zig build -Doptimize=ReleaseSafe >/dev/null)
+fi
+exec "$bin" "$@"

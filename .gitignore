@@ -1,6 +1,2 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.egg-info/
-.venv/
+.zig-cache/
+zig-out/
